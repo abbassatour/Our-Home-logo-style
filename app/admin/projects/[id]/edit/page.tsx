@@ -1,4 +1,4 @@
-//app\admin\projects\[id]\edit\page.tsx
+// app/admin/projects/[id]/edit/page.tsx
 "use client";
 
 import { useState, useEffect, use } from "react";
@@ -9,8 +9,11 @@ import {
   FaSave,
   FaArrowRight,
   FaCloudUploadAlt,
-  FaImages,
   FaTrash,
+  FaUserTie,
+  FaRulerCombined,
+  FaCalendarAlt,
+  FaStar,
 } from "react-icons/fa";
 
 export default function EditProjectPage({
@@ -29,6 +32,11 @@ export default function EditProjectPage({
     category: "",
     location: "",
     description: "",
+    client_name: "",
+    area: "",
+    completion_date: "",
+    status: "completed",
+    is_featured: false,
     image_url: "",
     images_gallery: [] as string[],
   });
@@ -47,15 +55,20 @@ export default function EditProjectPage({
         .single();
 
       if (error) {
-        alert("فشل تحميل المشروع، تأكد من الرقم");
+        alert("فشل تحميل المشروع، تأكد من صحة الرابط");
         router.push("/admin/projects");
       } else if (data) {
         setFormData({
-          title: data.title,
-          category: data.category,
+          title: data.title || "",
+          category: data.category || "بناء سكني",
           location: data.location || "",
           description: data.description || "",
-          image_url: data.image_url,
+          client_name: data.client_name || "",
+          area: data.area || "",
+          completion_date: data.completion_date || "",
+          status: data.status || "completed",
+          is_featured: Boolean(data.is_featured),
+          image_url: data.image_url || "",
           images_gallery: data.images_gallery || [],
         });
       }
@@ -71,41 +84,56 @@ export default function EditProjectPage({
 
     const formElement = new FormData(e.currentTarget);
 
+    // 1. جمع وتحديث كافة الحقول (بما فيها الحقول التي كانت مفقودة)
     const updates: any = {
       title: formElement.get("title"),
       category: formElement.get("category"),
       location: formElement.get("location"),
       description: formElement.get("description"),
+      client_name: formElement.get("client_name"),
+      area: formElement.get("area"),
+      completion_date: formElement.get("completion_date") || null,
+      status: formElement.get("status"),
+      is_featured: formElement.get("is_featured") === "on",
     };
 
+    // 2. معالجة تحديث الصورة الرئيسية وحذف القديمة من التخزين
     const mainImageFile = formElement.get("new_image") as File;
     if (mainImageFile && mainImageFile.size > 0) {
       const fileExt = mainImageFile.name.split(".").pop();
-      const fileName = `main_${Date.now()}_update.${fileExt}`;
+      const fileName = `main_${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+      
       const { error: upError } = await supabase.storage
         .from("projects")
         .upload(fileName, mainImageFile);
 
       if (!upError) {
+        // تنظيف وحذف الصورة القديمة من Storage لتوفير المساحة
+        if (formData.image_url) {
+          const oldFileName = formData.image_url.split("/").pop();
+          if (oldFileName) {
+            await supabase.storage.from("projects").remove([oldFileName]);
+          }
+        }
         updates.image_url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/projects/${fileName}`;
       }
     }
 
+    // 3. معالجة إضافة صور جديدة للمعرض
     const newGalleryFiles = formElement.getAll("new_gallery") as File[];
     const validGalleryFiles = newGalleryFiles.filter((f) => f.size > 0);
-
     const updatedGallery = [...formData.images_gallery];
 
     if (validGalleryFiles.length > 0) {
       const uploadPromises = validGalleryFiles.map(async (file) => {
-        const fileName = `gallery_${Date.now()}_${Math.random()}.${file.name
-          .split(".")
-          .pop()}`;
+        const fileExt = file.name.split(".").pop();
+        const fileName = `gallery_${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
         const { error } = await supabase.storage
           .from("projects")
           .upload(fileName, file);
-        if (!error)
+        if (!error) {
           return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/projects/${fileName}`;
+        }
         return null;
       });
 
@@ -117,6 +145,7 @@ export default function EditProjectPage({
       updates.images_gallery = updatedGallery;
     }
 
+    // 4. حفظ البيانات في Supabase
     const { error } = await supabase
       .from("projects")
       .update(updates)
@@ -133,9 +162,15 @@ export default function EditProjectPage({
     setSaving(false);
   };
 
+  // حذف صورة معينة من المعرض (قاعدة البيانات + حذف الملف فيزيائياً من Storage)
   const removeGalleryImage = async (imgUrl: string) => {
-    if (!confirm("هل تريد حذف هذه الصورة من المعرض؟ (سيتم الحفظ فوراً)"))
-      return;
+    if (!confirm("هل تريد حذف هذه الصورة من المعرض؟ سيتم حذفها نهائياً.")) return;
+
+    // حذف الصورة فيزيائياً من التخزين
+    const fileName = imgUrl.split("/").pop();
+    if (fileName) {
+      await supabase.storage.from("projects").remove([fileName]);
+    }
 
     const newGallery = formData.images_gallery.filter((url) => url !== imgUrl);
 
@@ -149,34 +184,33 @@ export default function EditProjectPage({
     }
   };
 
-  if (loading)
+  if (loading) {
     return (
-      <div className="text-white text-center py-20">جاري تحميل البيانات...</div>
+      <div className="text-white text-center py-20">جاري تحميل بيانات المشروع...</div>
     );
+  }
 
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className="max-w-4xl mx-auto py-6">
       <div className="flex items-center gap-4 mb-8">
         <button
           onClick={() => router.back()}
-          className="text-slate-400 hover:text-white"
+          className="text-slate-400 hover:text-white transition"
         >
           <FaArrowRight size={20} />
         </button>
-        <h1 className="text-3xl font-bold text-white">
+        <h1 className="text-2xl md:text-3xl font-bold text-white">
           تعديل المشروع: {formData.title}
         </h1>
       </div>
 
       <form
         onSubmit={handleUpdate}
-        className="space-y-8 bg-slate-900 p-8 rounded-2xl border border-white/10"
+        className="space-y-8 bg-slate-900 p-6 md:p-8 rounded-2xl border border-white/10"
       >
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
-            <label className="block mb-2 text-sm text-slate-300">
-              اسم المشروع
-            </label>
+            <label className="block mb-2 text-sm text-slate-300">اسم المشروع *</label>
             <input
               name="title"
               defaultValue={formData.title}
@@ -210,8 +244,78 @@ export default function EditProjectPage({
           </select>
         </div>
 
+        {/* الحقول الخمسة المستعادة */}
+        <div className="bg-slate-950/50 p-6 rounded-xl border border-white/5 grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div>
+            <label className="block mb-2 text-sm text-blue-400 flex items-center gap-2">
+              <FaUserTie /> اسم العميل
+            </label>
+            <input
+              name="client_name"
+              defaultValue={formData.client_name}
+              type="text"
+              className="w-full bg-slate-900 p-3 rounded-lg border border-white/10 text-white focus:border-blue-500 outline-none"
+              placeholder="السيد محمد..."
+            />
+          </div>
+
+          <div>
+            <label className="block mb-2 text-sm text-blue-400 flex items-center gap-2">
+              <FaRulerCombined /> المساحة
+            </label>
+            <input
+              name="area"
+              defaultValue={formData.area}
+              type="text"
+              className="w-full bg-slate-900 p-3 rounded-lg border border-white/10 text-white focus:border-blue-500 outline-none"
+              placeholder="150 م²"
+            />
+          </div>
+
+          <div>
+            <label className="block mb-2 text-sm text-blue-400 flex items-center gap-2">
+              <FaCalendarAlt /> تاريخ التسليم
+            </label>
+            <input
+              name="completion_date"
+              defaultValue={formData.completion_date}
+              type="date"
+              className="w-full bg-slate-900 p-3 rounded-lg border border-white/10 text-white focus:border-blue-500 outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block mb-2 text-sm text-slate-300">حالة المشروع</label>
+            <select
+              name="status"
+              defaultValue={formData.status}
+              className="w-full bg-slate-900 p-3 rounded-lg border border-white/10 text-white focus:border-blue-500 outline-none"
+            >
+              <option value="completed">مكتمل (تم التسليم)</option>
+              <option value="ongoing">قيد الإنشاء (ورشة قائمة)</option>
+            </select>
+          </div>
+
+          <div className="md:col-span-2 flex items-center p-3 bg-slate-900 rounded-lg border border-white/10">
+            <input
+              type="checkbox"
+              name="is_featured"
+              id="is_featured"
+              defaultChecked={formData.is_featured}
+              className="w-5 h-5 accent-yellow-500 cursor-pointer"
+            />
+            <label
+              htmlFor="is_featured"
+              className="mr-3 text-white cursor-pointer select-none flex items-center gap-2"
+            >
+              <FaStar className="text-yellow-500" />
+              <span>تثبيت في الصفحة الرئيسية (مشروع مميز)</span>
+            </label>
+          </div>
+        </div>
+
         <div>
-          <label className="block mb-2 text-sm text-slate-300">الوصف</label>
+          <label className="block mb-2 text-sm text-slate-300">الوصف التفصيلي</label>
           <textarea
             name="description"
             defaultValue={formData.description}
@@ -219,22 +323,23 @@ export default function EditProjectPage({
           ></textarea>
         </div>
 
+        {/* قسم الصورة الرئيسية واستبدالها */}
         <div className="p-6 border border-white/10 rounded-xl bg-slate-950/30">
           <label className="block mb-4 text-sm text-yellow-500 font-bold">
             الصورة الرئيسية الحالية
           </label>
-          <div className="flex gap-6 items-start">
-            <div className="relative w-32 h-24 rounded-lg overflow-hidden border border-white/20">
+          <div className="flex flex-col sm:flex-row gap-6 items-start">
+            <div className="relative w-36 h-24 rounded-lg overflow-hidden border border-white/20 shrink-0">
               <Image
                 src={formData.image_url}
-                alt="Current"
+                alt="Current Cover"
                 fill
                 className="object-cover"
               />
             </div>
-            <div className="flex-1">
+            <div className="flex-1 w-full">
               <label className="block mb-2 text-sm text-slate-400">
-                تغيير الصورة (اختياري)
+                استبدال الصورة الرئيسية (اختياري)
               </label>
               <input
                 name="new_image"
@@ -246,22 +351,23 @@ export default function EditProjectPage({
           </div>
         </div>
 
+        {/* قسم صور المعرض */}
         <div className="p-6 border border-white/10 rounded-xl bg-slate-950/30">
           <label className="block mb-4 text-sm text-blue-400 font-bold">
-            صور المعرض ({formData.images_gallery.length})
+            صور المعرض الحالية ({formData.images_gallery.length})
           </label>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
             {formData.images_gallery.map((url, idx) => (
               <div
                 key={idx}
                 className="relative aspect-square rounded-lg overflow-hidden group border border-white/10"
               >
-                <Image src={url} alt="gallery" fill className="object-cover" />
+                <Image src={url} alt="Gallery item" fill className="object-cover" />
                 <button
                   type="button"
                   onClick={() => removeGalleryImage(url)}
-                  className="absolute top-1 right-1 bg-red-600/80 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition"
+                  className="absolute top-1 right-1 bg-red-600 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition shadow-md"
                   title="حذف الصورة"
                 >
                   <FaTrash size={12} />
@@ -272,7 +378,7 @@ export default function EditProjectPage({
 
           <div className="border-t border-white/10 pt-4">
             <label className="block mb-2 text-sm text-slate-400 flex items-center gap-2">
-              <FaCloudUploadAlt />
+              <FaCloudUploadAlt className="text-lg text-blue-400" />
               <span>إضافة صور جديدة للمعرض</span>
             </label>
             <input
@@ -291,11 +397,11 @@ export default function EditProjectPage({
           className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-xl transition flex justify-center items-center gap-2 shadow-lg disabled:opacity-50"
         >
           {saving ? (
-            "جاري الحفظ..."
+            "جاري الحفظ والتحديث..."
           ) : (
             <>
               <FaSave />
-              <span>حفظ التعديلات</span>
+              <span>حفظ جميع التعديلات</span>
             </>
           )}
         </button>
