@@ -1,8 +1,8 @@
 // app/admin/testimonials/page.tsx
 import { createClient } from "../../utils/supabase/server";
-import { deleteTestimonial } from "./actions";
-import { FaTrash, FaStar } from "react-icons/fa";
+import { FaStar } from "react-icons/fa";
 import AddTestimonialForm from "./AddTestimonialForm";
+import DeleteTestimonialButton from "./DeleteTestimonialButton";
 
 export default async function TestimonialsAdmin() {
   const supabase = await createClient();
@@ -16,7 +16,7 @@ export default async function TestimonialsAdmin() {
     <div className="max-w-4xl mx-auto">
       <h1 className="text-3xl font-bold text-white mb-8">إدارة آراء العملاء</h1>
 
-      {/* المكون التفاعلي الجديد كلياً */}
+      {/* نموذج إضافة رأي جديد */}
       <AddTestimonialForm />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -55,18 +55,10 @@ export default async function TestimonialsAdmin() {
               &quot;{review.content}&quot;
             </p>
 
-            <form
-              action={deleteTestimonial}
-              className="absolute top-4 left-4 opacity-0 group-hover:opacity-100 transition"
-            >
-              <input type="hidden" name="id" value={review.id} />
-              <button
-                type="submit"
-                className="text-red-500 hover:text-red-400 p-2 bg-slate-900 rounded-full hover:bg-red-500/10 transition"
-              >
-                <FaTrash />
-              </button>
-            </form>
+            {/* زر الحذف الآمن مع نافذة التأكيد */}
+            <div className="absolute top-4 left-4 opacity-0 group-hover:opacity-100 transition">
+              <DeleteTestimonialButton id={review.id} />
+            </div>
           </div>
         ))}
         {(!reviews || reviews.length === 0) && (
